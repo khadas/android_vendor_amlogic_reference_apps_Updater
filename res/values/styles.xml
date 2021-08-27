@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="AppTheme" parent="@style/Theme.Leanback" >
+        <item name="android:windowShowWallpaper">false</item>
+        <item name="android:windowBackground">#FF101010</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Leanback</item>
+    </style>
+
+    <style name="ActionPrimaryButton" parent="android:Widget.DeviceDefault.Button"/>
+
+    <style name="Theme.empty" parent="@android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:animation">@null</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowEnterAnimation">@null</item>
+        <item name="android:windowExitAnimation">@null</item>
+        <item name="android:windowEnterTransition">@null</item>
+        <item name="android:windowExitTransition">@null</item>
+    </style>
+</resources>
