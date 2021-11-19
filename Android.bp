@@ -33,7 +33,6 @@ android_app {
     certificate: "platform",
     required: ["privapp_whitelist_com.droidlogic.updater"],
     srcs: ["src/**/*.java"],
-    privileged: true,
     product_specific: true,
     static_libs: [
         "guava",
