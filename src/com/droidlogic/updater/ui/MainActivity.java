@@ -89,6 +89,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
     private static boolean rebootRequest;
     private String filePath;
     private UpdateManager mUpdateManager;
+    private static boolean mMergeChecking;
 
     private PrepareUpdateService.CheckupResultCallback mCallback = (int status, UpdateConfig config) -> {
         if (PermissionUtils.CanDebug()) Log.d(TAG,"checkcall back status:"+status);
@@ -110,6 +111,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
         mUpdateManager = ((UpdateApplication)getApplication()).getUpdateManager();
         mBtnLocal = findViewById(R.id.update_local);
         updateBtn = findViewById(R.id.btn_online);
@@ -124,13 +126,32 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
         mBtnLocal.setOnClickListener(this);
         mBtnUpdate.setOnClickListener(this);
         mBtnReboot.setOnClickListener(this);
-        mWorkerThread.start();
         Log.d("Update","onCreate");
+        mWorkerThread.start();
         mWorkerHandler = new Handler(mWorkerThread.getLooper());
         mPref = new PrefUtils(this);
+        mWorkerHandler.post(new checkMerge());
+        mMergeChecking = true;
         rebootRequest = false;
     }
     private Runnable cfgRunning = new cfgRunnable();
+    class checkMerge implements Runnable {
+        public void run() {
+            runOnUiThread(() -> {
+                updateBtn.setEnabled(false);
+                mBtnLocal.setEnabled(false);
+                mRunningStatus.setVisibility(View.VISIBLE);
+                mRunningStatus.setText(getString(R.string.wait_for_merge));});
+            int mergeResult = mUpdateManager.cleanupAppliedPayload();
+            Log.d("ABUpdate","mergeResult"+mergeResult);
+            if (mPref.getBooleanVal(PrefUtils.key, false)) {
+                runOnUiThread(() -> {mRunningStatus.setText(getString(R.string.update_success));});
+                mPref.setBoolean(PrefUtils.key,false);
+            }
+            mMergeChecking = false;
+            runOnUiThread(() -> {showUI();});
+        }
+    }
     class cfgRunnable implements Runnable {
         public void run() {
             try {
@@ -157,6 +178,12 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                        Log.d("Update","File copy failed");
                        mHandler.sendEmptyMessage(MSG_ERR);
                        return;
+                   }else {
+                        runOnUiThread(()->{
+                            mRunningStatus.setText(R.string.start_update);
+                            mProgressBar.setIndeterminate(false);
+                            mProgressBar.setVisibility(View.VISIBLE);
+                        });
                    }
                 }
                 if (mStatus == UpdaterState.RUNNING || mStatus == UpdaterState.SLOT_SWITCH_REQUIRED
@@ -181,6 +208,13 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
     @Override
     protected void onResume() {
         super.onResume();
+        if (!mMergeChecking) {
+            this.mUpdateManager.setOnStateChangeCallback(this::onUpdaterStateChange);
+            this.mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
+            this.mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
+        }
+    }
+    public void showUI() {
         if (mPref.getBooleanVal(PrefUtils.key, false)) {
             if (rebootRequest) {
                 //already requestBoot,disabled but still enter
@@ -191,28 +225,16 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                 mBtnReboot.requestFocus();
                 Log.d(TAG,"rebootRequest is true");
                 return;
-            } else {
-                mRunningStatus.setText(getResources().getString(R.string.wait_for_merge));
-                mvOnline.setVisibility(View.INVISIBLE);
-                mvLocal.setVisibility(View.INVISIBLE);
-                mHandler.sendEmptyMessageDelayed(MSG_WAIT_FOR_MERGE,1000);
-                Log.d(TAG,"rebootRequest is false");
-                return;
             }
-        }else {
-            initialView();
         }
+        initialView();
     }
-
     private void initialView() {
         Log.d(TAG,"initialView");
         if (filePath != null && mFullPath.getText() == null) {
             mFullPath.setText(filePath);
             mLocalPath.setText(filePath.substring(filePath.lastIndexOf("/") + 1));
         }
-        this.mUpdateManager.setOnStateChangeCallback(this::onUpdaterStateChange);
-        this.mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
-        this.mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
         if (PermissionUtils.CanDebug()) Log.d(TAG,"Service getStatus"+PrepareUpdateService.getStatus());
         if (!checkLowerNetwork(MainActivity.this)) {
             updateBtn.setEnabled(false);
@@ -220,6 +242,9 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
             updateBtn.setEnabled(true);
             updateBtn.setText(R.string.btn_check);
         }
+        this.mUpdateManager.setOnStateChangeCallback(this::onUpdaterStateChange);
+        this.mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
+        this.mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
         mStatus = mUpdateManager.getUpdaterState();
         onUpdaterStateChange(mStatus);
         updateBtn.setOnClickListener(new View.OnClickListener() {
@@ -509,7 +534,6 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
 
                 break;
             case R.id.rebootbtn:
-                mPref.disableUI(true, MainActivity.this);
                 ((PowerManager)MainActivity.this.getSystemService(Context.POWER_SERVICE)).reboot("");
                 break;
 

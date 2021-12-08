@@ -587,16 +587,4 @@ public class PrefUtils {
     public interface CallbackChecker {
         public boolean checkrunning();
     }
-    public void disableUI(boolean disable,Context cxt) {
-        PackageManager pmg=cxt.getPackageManager();
-        ComponentName component=new ComponentName(cxt,MainActivity.class);
-        int res = pmg.getComponentEnabledSetting(component);
-        if ( disable ) {
-            pmg.setComponentEnabledSetting(component, PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP);
-        }else{
-            pmg.setComponentEnabledSetting(component, PackageManager.COMPONENT_ENABLED_STATE_DEFAULT,
-                    PackageManager.DONT_KILL_APP);
-        }
-    }
 }

@@ -28,14 +28,6 @@
                 <action android:name="com.droidlogic.checkup.update" />
             </intent-filter>
        </service>
-
-        <receiver android:exported="false"
-             android:name=".ui.LoaderReceiver" >
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                 <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </receiver>
        <activity android:name=".ui.UpdateActivity"/>
        <activity android:exported="true"
              android:name=".ui.MainActivity">
@@ -46,7 +38,6 @@
             </intent-filter>
        </activity>
        <activity android:name=".ui.FileSelector"/>
-       <activity android:name=".ui.EmptyActivity"  android:theme="@style/Theme.empty"/>
     </application>
 
 </manifest>
