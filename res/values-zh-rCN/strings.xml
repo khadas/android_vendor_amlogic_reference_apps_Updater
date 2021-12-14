@@ -29,5 +29,5 @@
     <string name="update_fail">"升级失败"</string>
     <string name="result">"正在查询升级结果"</string>
     <string name="retry">"请重新升级"</string>
-    <string name="wait_for_merge">"系统正在更新，请等待"</string>
+    <string name="wait_for_merge">"检查系统更新状态，请等候"</string>
 </resources>

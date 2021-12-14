@@ -90,6 +90,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
     private String filePath;
     private UpdateManager mUpdateManager;
     private static boolean mMergeChecking;
+    private static boolean mResumed;
 
     private PrepareUpdateService.CheckupResultCallback mCallback = (int status, UpdateConfig config) -> {
         if (PermissionUtils.CanDebug()) Log.d(TAG,"checkcall back status:"+status);
@@ -126,7 +127,6 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
         mBtnLocal.setOnClickListener(this);
         mBtnUpdate.setOnClickListener(this);
         mBtnReboot.setOnClickListener(this);
-        Log.d("Update","onCreate");
         mWorkerThread.start();
         mWorkerHandler = new Handler(mWorkerThread.getLooper());
         mPref = new PrefUtils(this);
@@ -143,7 +143,6 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                 mRunningStatus.setVisibility(View.VISIBLE);
                 mRunningStatus.setText(getString(R.string.wait_for_merge));});
             int mergeResult = mUpdateManager.cleanupAppliedPayload();
-            Log.d("ABUpdate","mergeResult"+mergeResult);
             if (mPref.getBooleanVal(PrefUtils.key, false)) {
                 runOnUiThread(() -> {mRunningStatus.setText(getString(R.string.update_success));});
                 mPref.setBoolean(PrefUtils.key,false);
@@ -156,6 +155,9 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
         public void run() {
             try {
                 Log.d("Update","start cp");
+                mUpdateManager.setOnStateChangeCallback(null);
+                mUpdateManager.setOnEngineCompleteCallback(null);
+                mUpdateManager.setOnProgressUpdateCallback(null);
                 try {
                     mUpdateManager.cancelRunningUpdate();
                     mUpdateManager.resetUpdate();
@@ -169,33 +171,43 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                     mProgressBar.setIndeterminate(true);
                     mProgressBar.setVisibility(View.VISIBLE);
                 });
-                PrefUtils.copyFile(filePath,UpdateConfig.TARTEPATH,MainActivity.this);
-                if (quickStopCopy) {
-                    Log.d("Update","interrup by lastfilepath");
-                    return;
-                }else {
-                   if (!MD5.checkMd5Files(new File(filePath),new File(UpdateConfig.TARTEPATH))) {
-                       Log.d("Update","File copy failed");
-                       mHandler.sendEmptyMessage(MSG_ERR);
-                       return;
-                   }else {
-                        runOnUiThread(()->{
-                            mRunningStatus.setText(R.string.start_update);
-                            mProgressBar.setIndeterminate(false);
-                            mProgressBar.setVisibility(View.VISIBLE);
-                        });
-                   }
+                boolean alreadyCp = false;
+                if (MD5.checkMd5Files(new File(filePath),new File(UpdateConfig.TARTEPATH))) {
+                    alreadyCp = true;
                 }
+                if (!alreadyCp) {
+                    PrefUtils.copyFile(filePath,UpdateConfig.TARTEPATH,MainActivity.this);
+                    if (quickStopCopy && !mResumed) {
+                        runOnUiThread(() -> {resetUI();});
+                        Log.d("Update","interrup by lastfilepath");
+                        return;
+                    }else {
+                       if (!MD5.checkMd5Files(new File(filePath),new File(UpdateConfig.TARTEPATH))) {
+                           Log.d("Update","File copy failed");
+                           mHandler.sendEmptyMessage(MSG_ERR);
+                           return;
+                       }
+                    }
+                }
+                mUpdateManager.setOnStateChangeCallback(MainActivity.this::onUpdaterStateChange);
+                mUpdateManager.setOnEngineCompleteCallback(MainActivity.this::onEnginePayloadApplicationComplete);
+                mUpdateManager.setOnProgressUpdateCallback(MainActivity.this::onProgressUpdate);
                 if (mStatus == UpdaterState.RUNNING || mStatus == UpdaterState.SLOT_SWITCH_REQUIRED
-                || mStatus == UpdaterState.REBOOT_REQUIRED) {
+                || mStatus == UpdaterState.REBOOT_REQUIRED ) {
+                    return;
+                }
+                if (!mResumed) {
+                    runOnUiThread(() -> {resetUI();});
                     return;
                 }
                 currentConfig = UpdateConfig.readDefCfg(mFullPath.getText().toString());
-                Log.d("Update","stop cp");
+                Log.d("Update","stop cp"+mBtnLocal.getVisibility()+"--"+mFullPath.getText());
                 if (mBtnLocal.getVisibility() == View.VISIBLE &&
                             mFullPath.getText() != null
                             && filePath.equals(mFullPath.getText().toString())) {
                     applyUpdate(currentConfig);
+                }else {
+                    runOnUiThread(() -> {resetUI();});
                 }
             } catch (Exception ex) {
                 ex.printStackTrace();
@@ -208,22 +220,29 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
     @Override
     protected void onResume() {
         super.onResume();
+        mResumed = true;
+        Log.d(TAG,"onResume"+mMergeChecking);
         if (!mMergeChecking) {
+            if (mUpdateManager.getUpdaterState()> UpdaterState.IDLE) {
+                mStatus = mUpdateManager.getUpdaterState();
+                onUpdaterStateChange(mStatus);
+            }
             this.mUpdateManager.setOnStateChangeCallback(this::onUpdaterStateChange);
             this.mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
             this.mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
         }
     }
     public void showUI() {
+        Log.d(TAG,"showUI"+mPref.getBooleanVal(PrefUtils.key, false)+"/"+rebootRequest);
         if (mPref.getBooleanVal(PrefUtils.key, false)) {
             if (rebootRequest) {
                 //already requestBoot,disabled but still enter
+                mRunningStatus.setVisibility(View.VISIBLE);
                 mRunningStatus.setText(getResources().getString(R.string.reboot_cmd));
                 mvOnline.setVisibility(View.INVISIBLE);
                 mvLocal.setVisibility(View.INVISIBLE);
                 mBtnReboot.setVisibility(View.VISIBLE);
                 mBtnReboot.requestFocus();
-                Log.d(TAG,"rebootRequest is true");
                 return;
             }
         }
@@ -247,6 +266,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
         this.mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
         mStatus = mUpdateManager.getUpdaterState();
         onUpdaterStateChange(mStatus);
+
         updateBtn.setOnClickListener(new View.OnClickListener() {
 
             @Override
@@ -258,9 +278,15 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                     updateBtn.setEnabled(false);
                     mBtnUpdate.setEnabled(false);
                     try {
+                        mUpdateManager.setOnStateChangeCallback(null);
+                        mUpdateManager.setOnEngineCompleteCallback(null);
+                        mUpdateManager.setOnProgressUpdateCallback(null);
                         mUpdateManager.cancelRunningUpdate();
                         mUpdateManager.resetUpdate();
                     } catch (Exception ex){}
+                    mUpdateManager.setOnStateChangeCallback(MainActivity.this::onUpdaterStateChange);
+                    mUpdateManager.setOnEngineCompleteCallback(MainActivity.this::onEnginePayloadApplicationComplete);
+                    mUpdateManager.setOnProgressUpdateCallback(MainActivity.this::onProgressUpdate);
                     applyUpdate(currentConfig);
                 }
             }
@@ -274,9 +300,9 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
     @Override
     protected void onPause() {
         super.onPause();
+        mResumed = false;
         this.mUpdateManager.setOnStateChangeCallback(null);
         this.mUpdateManager.setOnEngineCompleteCallback(null);
-        this.mUpdateManager.setOnProgressUpdateCallback(null);
         this.mUpdateManager.setOnProgressUpdateCallback(null);
     }
 
@@ -341,6 +367,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                 }
                 break;
             default:
+                mRunningStatus.setVisibility(View.VISIBLE);
                 String statusText = UpdateEngineStatuses.getStatusText(status);
                 mRunningStatus.setText(statusText + "/" + status);
         }
@@ -417,6 +444,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
     }
     private void resetUI(){
          mProgressBar.setVisibility(View.INVISIBLE);
+         mRunningStatus.setVisibility(View.INVISIBLE);
          if (mvOnline != null && mvOnline.getVisibility() == View.INVISIBLE) {
             mvOnline.setVisibility(View.VISIBLE);
          }
@@ -463,6 +491,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                 if (state == UpdaterState.PAUSED || state == UpdaterState.ERROR || state == IDLE) {
                     Log.d(TAG,"adjust ui---->state"+state);
                     resetUI();
+                    mRunningStatus.setVisibility(View.VISIBLE);
                     if (state == UpdaterState.ERROR || state == UpdaterState.PAUSED ) {
                         mRunningStatus.setText(UpdaterState.getStateText(state)+getString(R.string.retry));
                     }else {
@@ -509,6 +538,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
      * @param state updater sample state
      */
     private void setUiUpdaterState(int state) {
+        mRunningStatus.setVisibility(View.VISIBLE);
         String stateText = getResources().getString(R.string.running_pre) + UpdaterState.getStateText(state);
         if (PermissionUtils.CanDebug()) Log.d(TAG, "setUiUpdaterState--->"+stateText + "/" + state);
 
@@ -562,7 +592,6 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                 case MSG_ERR:
                     mRunningStatus.setText(getResources().getString(R.string.online_pre)
                                                 +getResources().getString(R.string.error_ver));
-                    Log.d(TAG,"current status err");
                     if (mProgressBar.getVisibility() == View.VISIBLE) {
                         mProgressBar.setVisibility(View.INVISIBLE);
                     }
@@ -574,7 +603,8 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                     break;
                 case MSG_SUCC:
                     String preparecmd = getResources().getString(R.string.reboot_cmd_prepare);
-                    if (mRunningStatus.getText().equals(preparecmd)) {
+                    String updateSuccess = getResources().getString(R.string.update_success);
+                    if (mRunningStatus.getText().equals(preparecmd) || mRunningStatus.getText().equals(updateSuccess)) {
                         mRunningStatus.setText(getResources().getString(R.string.reboot_cmd));
                         mBtnReboot.setVisibility(View.VISIBLE);
                         mBtnReboot.requestFocus();

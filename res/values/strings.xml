@@ -29,6 +29,6 @@
     <string name="update_fail">"Update Failed"</string>
     <string name="result">"Checking Update Result"</string>
     <string name="retry">"Please retry update again"</string>
-    <string name="wait_for_merge">"System is Merging"</string>
+    <string name="wait_for_merge">"Checking Mergeing Status..."</string>
     <string name="start_update">"Initial Update Engine"</string>
 </resources>
