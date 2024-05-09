@@ -53,6 +53,11 @@ import com.droidlogic.updater.util.PermissionUtils;
 import java.io.IOException;
 import java.io.File;
 
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
+import android.content.ComponentName;
+import android.text.TextUtils;
+
 public class MainActivity extends Activity implements View.OnClickListener, PrefUtils.CallbackChecker{
     private static final String TAG = "ABUpdate";
     private static final int queryReturnOk = 0;
@@ -128,11 +133,33 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
         mBtnUpdate.setOnClickListener(this);
         mBtnReboot.setOnClickListener(this);
         mWorkerThread.start();
+        Log.d(TAG,"onCreate");
         mWorkerHandler = new Handler(mWorkerThread.getLooper());
         mPref = new PrefUtils(this);
         mWorkerHandler.post(new checkMerge());
         mMergeChecking = true;
         rebootRequest = false;
+
+        Intent intent = getIntent();
+        String mImageFilePath = intent.getStringExtra("path");
+        Log.e(TAG, "mImageFilePath " + mImageFilePath);
+        if(!TextUtils.isEmpty(mImageFilePath)) {
+            String file = mImageFilePath;
+            Log.e(TAG, "file " + file);
+            if (file != null) {
+                mFullPath.setText(file);
+                mLocalPath.setText(file.substring(file.lastIndexOf("/") + 1
+                ));
+                mBtnUpdate.setEnabled(true);
+            }
+
+            quickStopCopy = true;
+            mWorkerHandler.removeCallbacks(cfgRunning);
+            mWorkerHandler.post(cfgRunning);
+            mBtnLocal.setEnabled(false);
+            mBtnUpdate.setEnabled(false);
+            updateBtn.setEnabled(false);
+        }
     }
     private Runnable cfgRunning = new cfgRunnable();
     class checkMerge implements Runnable {
@@ -248,6 +275,19 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
         }
         initialView();
     }
+
+    private boolean checkOTAServiceInstalled(Context context, String pkgName) {
+        if (TextUtils.isEmpty(pkgName)) {
+            return false;
+        }
+        try {
+            context.getPackageManager().getPackageInfo(pkgName, 0);
+        } catch (Exception x) {
+            return false;
+        }
+        return true;
+    }
+
     private void initialView() {
         Log.d(TAG,"initialView");
         if (filePath != null && mFullPath.getText() == null) {
@@ -255,6 +295,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
             mLocalPath.setText(filePath.substring(filePath.lastIndexOf("/") + 1));
         }
         if (PermissionUtils.CanDebug()) Log.d(TAG,"Service getStatus"+PrepareUpdateService.getStatus());
+        Log.d(TAG,"Service getStatus"+PrepareUpdateService.getStatus());
         if (!checkLowerNetwork(MainActivity.this)) {
             updateBtn.setEnabled(false);
         }else if (PrepareUpdateService.getStatus() == IDLE && mStatus == IDLE) {
@@ -265,12 +306,24 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
         this.mUpdateManager.setOnEngineCompleteCallback(this::onEnginePayloadApplicationComplete);
         this.mUpdateManager.setOnProgressUpdateCallback(this::onProgressUpdate);
         mStatus = mUpdateManager.getUpdaterState();
+        Log.d(TAG,"mStatus " + mStatus);
         onUpdaterStateChange(mStatus);
 
         updateBtn.setOnClickListener(new View.OnClickListener() {
 
             @Override
             public void onClick(View v) {
+
+                boolean khadasUpdateService = checkOTAServiceInstalled(MainActivity.this, "com.khadas.otaservice");
+                Log.d(TAG, "khadasUpdateService " + khadasUpdateService);
+                if(khadasUpdateService) {
+                    ComponentName cn = new ComponentName("com.khadas.otaservice","com.khadas.otaservice.MainActivity") ;
+                    Intent intent = new Intent();
+                    intent.setComponent(cn);
+                    startActivity(intent);
+                    return;
+                }
+
                 if (updateBtn.getText().equals(getString(R.string.btn_check))) {
                     mHandler.sendEmptyMessage(CHECKING);
                     checkFromService();
@@ -334,6 +387,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                     (resultCode == queryReturnOk)) {
                 Bundle bundle = data.getExtras();
                 String file = bundle.getString(FileSelector.FILE);
+                Log.e(TAG, "file " + file);
                 if (file != null) {
                     mFullPath.setText(file);
                     mLocalPath.setText(file.substring(file.lastIndexOf("/") + 1
@@ -398,6 +452,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
             mUpdateManager.cancelRunningUpdate();
             mUpdateManager.resetUpdate();
         } catch (Exception ex){}
+        Log.d(TAG,"onDestroy");
     }
 
     /**
@@ -488,6 +543,8 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
             }
             String rebootCmd = getResources().getString(R.string.reboot_cmd);
             if (!mRunningStatus.getText().equals(rebootCmd)) {
+                Log.d(TAG,"state " + state);
+                boolean isSwitchOk = true;
                 if (state == UpdaterState.PAUSED || state == UpdaterState.ERROR || state == IDLE) {
                     Log.d(TAG,"adjust ui---->state"+state);
                     resetUI();
@@ -498,8 +555,9 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                         mRunningStatus.setText("");
                     }
                     return;
-                }else if (state == UpdaterState.SLOT_SWITCH_REQUIRED) {
-                    mUpdateManager.setSwitchSlotOnReboot();
+                } else if (state == UpdaterState.SLOT_SWITCH_REQUIRED) {
+                    isSwitchOk = mUpdateManager.setSwitchSlotOnReboot();
+                    Log.d(TAG,"setSwitchSlotOnReboot isSwitchOk " + isSwitchOk);
                 }
                 if (PermissionUtils.CanDebug()) Log.d(TAG,"adjust ui");
                 if (state == UpdaterState.SLOT_SWITCH_REQUIRED) {
@@ -507,6 +565,10 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                     if (!mRunningStatus.getText().equals(rebootCmd)) {
                         mRunningStatus.setText(getResources().getString(R.string.reboot_cmd_prepare));
                         mHandler.removeMessages(MSG_SUCC);
+                    }
+                    if(!isSwitchOk) {
+                        resetUI();
+                        mRunningStatus.setText("");
                     }
                 } else if (state == UpdaterState.REBOOT_REQUIRED) {
                     if (mRunningStatus.getText().toString().isEmpty()) {
@@ -568,6 +630,7 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                 break;
 
         }
+        Log.d(TAG,"onDestroy");
     }
 
     class UIHandler extends Handler {
@@ -611,6 +674,9 @@ public class MainActivity extends Activity implements View.OnClickListener, Pref
                     }
                     mPref.setBoolean(PrefUtils.key,true);
                     rebootRequest = true;
+                    //update success reboot immediately
+                    //mPref.disableUI(true, MainActivity.this);
+                    ((PowerManager)MainActivity.this.getSystemService(Context.POWER_SERVICE)).reboot("");
                     break;
                 case MSG_INIT:
                     try {

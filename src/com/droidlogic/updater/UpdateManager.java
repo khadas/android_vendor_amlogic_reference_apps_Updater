@@ -385,7 +385,11 @@ public class UpdateManager {
      * {@link UpdateEngine#applyPayload} might take several seconds to finish, and it will
      * invoke callbacks {@link this#onStatusUpdate} and {@link this#onPayloadApplicationComplete)}.
      */
-    public synchronized void setSwitchSlotOnReboot() {
+    public synchronized boolean setSwitchSlotOnReboot() {
+        if (mLastUpdateData == null) {
+            Log.d(TAG, "mLastUpdateData == null");
+            return false;
+        }
         if (PermissionUtils.CanDebug()) Log.d(TAG, "setSwitchSlotOnReboot invoked");
         // When mManualSwitchSlotRequired set false, next time
         // onApplicationPayloadComplete is called,
@@ -406,6 +410,7 @@ public class UpdateManager {
         // UpdateEngine sets property SWITCH_SLOT_ON_REBOOT=1 by default.
         // HTTP headers are not required, UpdateEngine is not expected to stream payload.
         updateEngineApplyPayload(builder.build());
+        return true;
     }
 
     /**

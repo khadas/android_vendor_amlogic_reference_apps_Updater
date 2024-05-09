@@ -28,6 +28,9 @@
             <intent-filter>
                 <action android:name="com.droidlogic.checkup.update" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.khadas.ota.UPDATE" />
+            </intent-filter>
        </service>
        <activity android:name=".ui.UpdateActivity"/>
        <activity android:exported="true"
