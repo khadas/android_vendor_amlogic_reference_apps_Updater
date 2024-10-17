@@ -28,10 +28,17 @@
             <intent-filter>
                 <action android:name="com.droidlogic.checkup.update" />
             </intent-filter>
+       </service>
+
+       <receiver
+          android:enabled="true"
+          android:exported="true"
+          android:name=".ui.LoaderReceiver" >
             <intent-filter>
                 <action android:name="com.khadas.ota.UPDATE" />
             </intent-filter>
-       </service>
+        </receiver>
+
        <activity android:name=".ui.UpdateActivity"/>
        <activity android:exported="true"
              android:name=".ui.MainActivity">
